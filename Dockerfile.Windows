@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.6
+
+# Default Trivy binary image, overwritten by Makefile
+# Download the zip file
+ADD https://objects.githubusercontent.com/github-production-release-asset-2e65be/180687624/b1e1f145-16d3-41d4-94c9-3eac45caaedc?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=releaseassetproduction%2F20250422%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20250422T040017Z&X-Amz-Expires=300&X-Amz-Signature=c32577e94f793abdb2cd2ec8ae5d7e15db43d5cee08cc911b1b12520fe8266a5&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3Dtrivy_0.61.1_windows-64bit.zip&response-content-type=application%2Foctet-stream /trivy.zip
+# Extract the zip file
+RUN powershell -Command "Expand-Archive -Path trivy.zip -DestinationPath trivy_extracted"
+# Copy trivy.exe to the desired folder
+RUN powershell -Command "Move-Item -Path trivy_extracted\\trivy.exe -Destination desired_folder\\trivy.exe"
+
+ARG BUILDKIT_SBOM_SCAN_STAGE=builder,manager-build,collector-build,remover-build,trivy-scanner-build
+
+
+# Build the manager binary
+FROM --platform=$BUILDPLATFORM golang:1.24.2-windowsservercore-ltsc2022 AS builder
+WORKDIR /workspace
+# Copy the Go Modules manifests
+COPY go.mod go.mod
+COPY go.sum go.sum
+# cache deps before building and copying source so that we don't need to re-download as much
+# and so that source changes don't invalidate our downloaded layer
+ENV GOCACHE=/root/gocache
+ENV CGO_ENABLED=0
+RUN \
+    --mount=type=cache,target=${GOCACHE} \
+    --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+COPY . .
+
+ARG LDFLAGS
+ARG TARGETOS
+ARG TARGETARCH
+
+FROM builder AS manager-build
+RUN \
+    --mount=type=cache,target=${GOCACHE} \
+    --mount=type=cache,target=/go/pkg/mod \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build ${LDFLAGS:+-ldflags "$LDFLAGS"} -o out/manager main.go
+
+FROM builder AS collector-build
+RUN \
+    --mount=type=cache,target=${GOCACHE} \
+    --mount=type=cache,target=/go/pkg/mod \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build ${LDFLAGS:+-ldflags "$LDFLAGS"} -o out/collector ./pkg/collector
+
+FROM builder AS remover-build
+RUN \
+    --mount=type=cache,target=${GOCACHE} \
+    --mount=type=cache,target=/go/pkg/mod \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build ${LDFLAGS:+-ldflags "$LDFLAGS"} -o out/remover ./pkg/remover
+
+FROM builder AS trivy-scanner-build
+RUN \
+    --mount=type=cache,target=${GOCACHE} \
+    --mount=type=cache,target=/go/pkg/mod \
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build ${LDFLAGS:+-ldflags "$LDFLAGS"} -o out/trivy-scanner ./pkg/scanners/trivy
+
+#https://github.com/microsoft/windows-host-process-containers-base-image
+FROM --platform=$TARGETPLATFORM mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image:v1.0.0 AS manager
+WORKDIR /
+COPY --from=manager-build /workspace/out/manager .
+USER 65532:65532
+ENTRYPOINT ["/manager"]
+
+FROM --platform=$TARGETPLATFORM mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image:v1.0.0 as collector
+COPY --from=collector-build /workspace/out/collector /
+ENTRYPOINT ["/collector"]
+
+FROM --platform=$TARGETPLATFORM mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image:v1.0.0 as remover
+COPY --from=remover-build /workspace/out/remover /
+ENTRYPOINT ["/remover"]
+
+FROM --platform=$TARGETPLATFORM mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image:v1.0.0 as trivy-scanner
+COPY --from=trivy-scanner-build /workspace/out/trivy-scanner /
+COPY --from=trivy-binary /usr/local/bin/trivy /
+WORKDIR /var/lib/trivy
+ENTRYPOINT ["/trivy-scanner"]
+
+FROM mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image:v1.0.0 as non-vulnerable
+COPY --from=builder /tmp /tmp

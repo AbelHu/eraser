@@ -48,7 +48,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	client, err := cri.NewCollectorClient(util.CRIPath)
+	client, err := cri.NewCollectorClient(util.CRIPath) // tbd for windows
 	if err != nil {
 		log.Error(err, "failed to get image client")
 		os.Exit(1)

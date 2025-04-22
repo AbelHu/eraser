@@ -214,7 +214,7 @@ build: generate fmt vet ## Build manager binary.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
-docker-build-manager: ## Build docker image with the manager.
+docker-build-manager: ## Build docker image with the manager for Linux.
 	docker buildx build \
 		$(_CACHE_FROM) $(_CACHE_TO) \
 		$(_ATTESTATIONS) \
@@ -222,9 +222,19 @@ docker-build-manager: ## Build docker image with the manager.
 		--platform="$(PLATFORM)" \
 		--output=$(OUTPUT_TYPE) \
 		-t ${MANAGER_IMG} \
-		--target manager .
+		--target manager -f Dockerfile .
 
-docker-build-trivy-scanner: ## Build docker image for trivy-scanner image.
+docker-build-manager-windows: ## Build docker image with the manager for Windows.
+	docker buildx build \
+		$(_CACHE_FROM) $(_CACHE_TO) \
+		$(_ATTESTATIONS) \
+		--build-arg LDFLAGS="$(LDFLAGS)" \
+		--platform="$(PLATFORM)" \
+		--output=$(OUTPUT_TYPE) \
+		-t ${MANAGER_IMG} \
+		--target manager -f Dockerfile.Windows .
+
+docker-build-trivy-scanner: ## Build docker image for trivy-scanner image for Linux.
 	docker buildx build \
 		$(_CACHE_FROM) $(_CACHE_TO) \
 		$(_ATTESTATIONS) \
@@ -233,9 +243,20 @@ docker-build-trivy-scanner: ## Build docker image for trivy-scanner image.
 		--platform="$(PLATFORM)" \
 		--output=$(OUTPUT_TYPE) \
 		-t ${TRIVY_SCANNER_IMG} \
-		--target trivy-scanner .
+		--target trivy-scanner -f Dockerfile .
 
-docker-build-remover: ## Build docker image for remover image.
+docker-build-trivy-scanner-windows: ## Build docker image for trivy-scanner image for Windows.
+	docker buildx build \
+		$(_CACHE_FROM) $(_CACHE_TO) \
+		$(_ATTESTATIONS) \
+		--build-arg TRIVY_BINARY_IMG="$(TRIVY_BINARY_IMG)" \
+		--build-arg LDFLAGS="$(TRIVY_SCANNER_LDFLAGS)" \
+		--platform="$(PLATFORM)" \
+		--output=$(OUTPUT_TYPE) \
+		-t ${TRIVY_SCANNER_IMG} \
+		--target trivy-scanner -f Dockerfile.Windows .
+
+docker-build-remover: ## Build docker image for remover image for Linux.
 	docker buildx build \
 		$(_CACHE_FROM) $(_CACHE_TO) \
 		$(_ATTESTATIONS) \
@@ -243,7 +264,17 @@ docker-build-remover: ## Build docker image for remover image.
 		--platform="$(PLATFORM)" \
 		--output=$(OUTPUT_TYPE) \
 		-t ${REMOVER_IMG} \
-		--target remover .
+		--target remover -f Dockerfile .
+
+docker-build-remover: ## Build docker image for remover image for Windows.
+	docker buildx build \
+		$(_CACHE_FROM) $(_CACHE_TO) \
+		$(_ATTESTATIONS) \
+		--build-arg LDFLAGS="$(ERASER_LDFLAGS)" \
+		--platform="$(PLATFORM)" \
+		--output=$(OUTPUT_TYPE) \
+		-t ${REMOVER_IMG} \
+		--target remover -f Dockerfile.Windows .
 
 docker-build-collector:
 	docker buildx build \
@@ -253,7 +284,17 @@ docker-build-collector:
 		--platform="$(PLATFORM)" \
 		--output=$(OUTPUT_TYPE) \
 		-t ${COLLECTOR_IMG} \
-		--target collector .
+		--target collector -f Dockerfile .
+
+docker-build-collector-windows:
+	docker buildx build \
+		$(_CACHE_FROM) $(_CACHE_TO) \
+		$(_ATTESTATIONS) \
+		--build-arg LDFLAGS="$(LDFLAGS)" \
+		--platform="$(PLATFORM)" \
+		--output=$(OUTPUT_TYPE) \
+		-t ${COLLECTOR_IMG} \
+		--target collector -f Dockerfile.Windows .
 
 ##@ Deployment
 
