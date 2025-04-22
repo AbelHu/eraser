@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	// unixProtocol is the network protocol of unix socket.
-	unixProtocol         = "unix"
 	PipeMode             = 0o644
 	EraseCompleteMessage = "complete"
 	EnvEraserRuntimeName = "ERASER_RUNTIME_NAME"
@@ -54,19 +52,13 @@ func GetConn(ctx context.Context, socketPath string) (conn *grpc.ClientConn, err
 }
 
 func getAddressAndDialer(endpoint string) (string, func(ctx context.Context, addr string) (net.Conn, error), error) {
-	protocol, addr, err := ParseEndpointWithFallbackProtocol(endpoint, unixProtocol)
+	protocol, addr, err := ParseEndpointWithFallbackProtocol(endpoint, defaultProtocol())
 	if err != nil {
 		return "", nil, err
 	}
-	if protocol != unixProtocol {
-		return "", nil, ErrOnlySupportUnixSocket
-	}
 
-	return addr, dial, nil
-}
-
-func dial(ctx context.Context, addr string) (net.Conn, error) {
-	return (&net.Dialer{}).DialContext(ctx, unixProtocol, addr)
+	// Use platform-specific dial function
+	return addr, getPlatformDialer(protocol), nil
 }
 
 func ParseEndpointWithFallbackProtocol(endpoint string, fallbackProtocol string) (protocol string, addr string, err error) {
@@ -91,6 +83,8 @@ func ParseEndpoint(endpoint string) (string, string, error) {
 		return "tcp", u.Host, nil
 	case "unix":
 		return "unix", u.Path, nil
+	case "npipe", "pipe": // Add support for named pipes on Windows
+		return "npipe", u.Path, nil
 	case "":
 		return "", "", fmt.Errorf("using %q as %w", endpoint, ErrEndpointDeprecated)
 	default:
