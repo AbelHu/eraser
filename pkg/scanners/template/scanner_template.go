@@ -9,9 +9,9 @@ import (
 
 	"github.com/eraser-dev/eraser/api/unversioned"
 	"github.com/go-logr/logr"
-	"golang.org/x/sys/unix"
 
 	"github.com/eraser-dev/eraser/pkg/metrics"
+	"github.com/eraser-dev/eraser/pkg/utils"
 	util "github.com/eraser-dev/eraser/pkg/utils"
 	"go.opentelemetry.io/otel/metric/global"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -59,7 +59,7 @@ func NewImageProvider(funcs ...ConfigFunc) ImageProvider {
 func (cfg *config) ReceiveImages() ([]unversioned.Image, error) {
 	var err error
 
-	if err := unix.Mkfifo(util.EraseCompleteScanPath, util.PipeMode); err != nil {
+	if err := utils.MkNamedPipe(util.EraseCompleteScanPath, util.PipeMode); err != nil {
 		cfg.log.Error(err, "failed to create pipe", "pipeName", util.EraseCompleteScanPath)
 		return nil, err
 	}

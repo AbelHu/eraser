@@ -12,7 +12,7 @@ import (
 
 	"github.com/eraser-dev/eraser/pkg/cri"
 	"github.com/eraser-dev/eraser/pkg/logger"
-	"golang.org/x/sys/unix"
+	"github.com/eraser-dev/eraser/pkg/utils"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	util "github.com/eraser-dev/eraser/pkg/utils"
@@ -85,7 +85,7 @@ func main() {
 		path = util.ScanErasePath
 	}
 
-	if err := unix.Mkfifo(path, util.PipeMode); err != nil {
+	if err := utils.MkNamedPipe(path, util.PipeMode); err != nil {
 		log.Error(err, "failed to create pipe", "pipeFile", path)
 		os.Exit(1)
 	}
@@ -102,7 +102,7 @@ func main() {
 	}
 
 	file.Close()
-	if err := unix.Mkfifo(util.EraseCompleteCollectPath, util.PipeMode); err != nil {
+	if err := utils.MkNamedPipe(util.EraseCompleteCollectPath, util.PipeMode); err != nil {
 		log.Error(err, "failed to create pipe", "pipeFile", util.EraseCompleteCollectPath)
 		os.Exit(1)
 	}
