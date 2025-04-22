@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	v1 "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -369,7 +368,7 @@ func WriteScanErasePipe(vulnerableImages []unversioned.Image) error {
 		return err
 	}
 
-	if err = unix.Mkfifo(ScanErasePath, PipeMode); err != nil {
+	if err = MkNamedPipe(ScanErasePath, PipeMode); err != nil {
 		return err
 	}
 

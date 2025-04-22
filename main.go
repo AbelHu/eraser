@@ -29,7 +29,6 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	"k8s.io/utils/inotify"
 	"sigs.k8s.io/yaml"
 
 	corev1 "k8s.io/api/core/v1"
@@ -54,6 +53,7 @@ import (
 	"github.com/eraser-dev/eraser/controllers"
 	"github.com/eraser-dev/eraser/pkg/logger"
 	"github.com/eraser-dev/eraser/pkg/utils"
+	"github.com/eraser-dev/eraser/pkg/watcher"
 	"github.com/eraser-dev/eraser/version"
 	//+kubebuilder:scaffold:imports
 )
@@ -252,35 +252,23 @@ func getUnversioned[T any](b []byte, defaults *T, convert convertFunc[T]) (*unve
 // watch for IN_DELETE_SELF events. In case the watch is dropped, we need
 // to reestablish, so watch of IN_IGNORED too.
 // https://ahmet.im/blog/kubernetes-inotify/ for more information.
-func setupWatcher(configFile string) (*inotify.Watcher, error) {
-	watcher, err := inotify.NewWatcher()
+func setupWatcher(configFile string) (watcher.FileWatcher, error) {
+	w, err := watcher.NewFileWatcher(configFile)
 	if err != nil {
 		return nil, err
 	}
-
-	err = watcher.AddWatch(configFile, inotify.InDeleteSelf|inotify.InIgnored)
-	if err != nil {
-		return nil, err
-	}
-	return watcher, nil
+	return w, nil
 }
 
-func startConfigWatch(cancel context.CancelFunc, watcher *inotify.Watcher, eraserOpts *config.Manager, filename string) {
+func startConfigWatch(cancel context.CancelFunc, w watcher.FileWatcher, eraserOpts *config.Manager, filename string) {
 	for {
 		select {
-		case ev := <-watcher.Event:
-			// by default inotify removes a watch on a file on an IN_DELETE_SELF
-			// event, so we have to remove and reinstate the watch
-			setupLog.V(1).Info("event", "event", ev)
-			if ev.Mask&inotify.InIgnored != 0 {
-				err := watcher.RemoveWatch(filename)
-				if err != nil {
-					setupLog.Error(err, "unable to remove watch on config")
-				}
-
-				err = watcher.AddWatch(filename, inotify.InDeleteSelf|inotify.InIgnored)
-				if err != nil {
-					setupLog.Error(err, "unable to set up new watch on configuration")
+		case event := <-w.Events():
+			setupLog.V(1).Info("event", "event", event)
+			if event.IsDelete() || event.IsRename() {
+				// Reestablish watch
+				if err := w.Reset(); err != nil {
+					setupLog.Error(err, "unable to reset watch on configuration")
 				}
 				continue
 			}
@@ -290,12 +278,12 @@ func startConfigWatch(cancel context.CancelFunc, watcher *inotify.Watcher, erase
 
 			*oldConfig, err = eraserOpts.Read()
 			if err != nil {
-				setupLog.Error(err, "configuration could not be read", "event", ev, "filename", filename)
+				setupLog.Error(err, "configuration could not be read", "event", event, "filename", filename)
 			}
 
 			newConfig, err := getConfig(filename)
 			if err != nil {
-				setupLog.Error(err, "configuration is missing or invalid", "event", ev, "filename", filename)
+				setupLog.Error(err, "configuration is missing or invalid", "event", event, "filename", filename)
 				continue
 			}
 
@@ -318,7 +306,7 @@ func startConfigWatch(cancel context.CancelFunc, watcher *inotify.Watcher, erase
 			}
 
 			setupLog.V(1).Info("new configuration", "manager", newConfig.Manager, "components", newConfig.Components)
-		case err := <-watcher.Error:
+		case err := <-w.Errors():
 			setupLog.Error(err, "file watcher error")
 		}
 	}
